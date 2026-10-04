@@ -1,17 +1,33 @@
-const CACHE='mosaed-v1';
-const CORE=['./','./index.html','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'];
-self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()))});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==CACHE).map(x=>caches.delete(x)))).then(()=>self.clients.claim()))});
+const CACHE='mosaed-v26-2-9-4';
+const CORE=['./','./index.html','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
+
+self.addEventListener('install',e=>{
+  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));
+});
+
+self.addEventListener('activate',e=>{
+  e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
+});
+
 self.addEventListener('fetch',e=>{
-  const r=e.request;
-  if(r.method!=='GET')return;
-  const u=new URL(r.url);
-  const ok=u.origin===location.origin||u.hostname==='fonts.googleapis.com'||u.hostname==='fonts.gstatic.com';
-  if(!ok)return;
-  e.respondWith(
-    fetch(r).then(res=>{
-      if(res&&(res.ok||res.type==='opaque')){const cp=res.clone();caches.open(CACHE).then(c=>c.put(r,cp))}
-      return res;
-    }).catch(()=>caches.match(r).then(m=>m||(r.mode==='navigate'?caches.match('./index.html'):undefined)))
-  );
+  const req=e.request;
+  if(req.method!=='GET')return;
+  const url=new URL(req.url);
+  // لا نتدخل في طلبات الذكاء الاصطناعي أو أي API
+  if(url.pathname.includes('/api/'))return;
+
+  // الصفحة: الشبكة أولاً ثم النسخة المحفوظة عند انقطاع الإنترنت
+  if(req.mode==='navigate'){
+    e.respondWith(fetch(req).then(r=>{const cp=r.clone();caches.open(CACHE).then(c=>c.put('./index.html',cp));return r;})
+      .catch(()=>caches.match('./index.html')));
+    return;
+  }
+  // الخطوط والملفات الثابتة: من الذاكرة أولاً ثم تحديث بالخلفية
+  e.respondWith(caches.match(req).then(hit=>{
+    const net=fetch(req).then(r=>{
+      if(r&&(r.status===200||r.type==='opaque')){const cp=r.clone();caches.open(CACHE).then(c=>c.put(req,cp));}
+      return r;
+    }).catch(()=>hit);
+    return hit||net;
+  }));
 });
